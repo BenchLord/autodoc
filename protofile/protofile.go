@@ -1,9 +1,9 @@
 package protofile
 
 import (
-	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -34,8 +34,17 @@ type Attribute struct {
 
 type ProtoFile struct {
 	services []Service
-	methods  []Method
 	messages []Message
+}
+
+// GetServices returns the services defined in the file
+func (p *ProtoFile) GetServices() []Service {
+	return p.services
+}
+
+// GetMessages returns the messages defined in the file
+func (p *ProtoFile) GetMessages() []Message {
+	return p.messages
 }
 
 /*
@@ -49,28 +58,26 @@ type ProtoFile struct {
 */
 
 func NewFile(name string) (*ProtoFile, error) {
-
-	//methodMap := make(map[string][]Attribute)
-
 	f, err := os.Open(name)
 	if err != nil {
 		return nil, err
 	}
-
 	pf := ProtoFile{}
-
 	statements, err := makeStatementList(f)
 	if err != nil {
 		return nil, err
 	}
-
 	for _, statement := range statements {
+		if strings.HasPrefix(statement, "service") {
+			defer func() {
+				service := parseServiceStatement(statement, &pf)
+				pf.services = append(pf.services, service)
+			}()
+		}
 		if strings.HasPrefix(statement, "message") {
 			pf.messages = append(pf.messages, parseMessageStatement(statement))
 		}
-
 	}
-	fmt.Println(pf.messages)
 	return &pf, nil
 }
 
@@ -108,27 +115,72 @@ func makeStatementList(f *os.File) ([]string, error) {
 	return statements, nil
 }
 
+func parseServiceStatement(s string, pf *ProtoFile) Service {
+	s = strings.Trim(s, "service ")
+	service := Service{}
+
+	service.Name = strings.Split(s, " ")[0]
+
+	methods := strings.Split(strings.Trim(s[strings.Index(s, "{"):], "{ }"), ";")
+	for _, method := range methods {
+		if method == "" {
+			continue
+		}
+		service.Methods = append(service.Methods, parseMethodStatement(method, pf))
+	}
+	return service
+}
+
+func parseMethodStatement(s string, pf *ProtoFile) Method {
+	s = strings.Trim(s, "prc ")
+	method := Method{}
+
+	// get name
+
+	// check if req is repeated
+	// use req name to get method info
+
+	// check if res is repeated
+	// use res name to get method info
+
+	return method
+}
+
 func parseMessageStatement(s string) Message {
 	s = strings.Trim(s, "message ")
 
 	name := strings.Split(s, " ")[0]
+	message := Message{Name: name, Attributes: []Attribute{}}
 
-	attributes := make([]Attribute, 0)
 	first := strings.Index(s, "{") + 1
 	last := strings.Index(s, "}")
-	attributesStatement := s[first:last]
-	attributeStatements := strings.Split(attributesStatement, ";")
-	for _, attribute := range attributeStatements {
+	s = s[first:last]
+	attributes := strings.Split(s, ";")
+	for _, attribute := range attributes {
 		attribute = strings.Trim(attribute, " ")
 		if len(attribute) == 0 {
 			continue
 		}
-		// get name, type, and num from string
-		attributes = append(attributes, Attribute{})
+		a := parseAttributeStatement(attribute)
+
+		message.Attributes = append(message.Attributes, a)
 	}
 
-	return Message{
-		Name:       name,
-		Attributes: attributes,
+	return message
+}
+
+func parseAttributeStatement(s string) Attribute {
+	attribute := Attribute{}
+	words := strings.Split(s, " ")
+
+	if strings.ToLower(words[0]) == "repeated" {
+		attribute.Repeated = true
+		words = words[1:]
 	}
+
+	attribute.AttributeType = words[0]
+	attribute.Name = words[1]
+	num, _ := strconv.Atoi(words[3])
+	attribute.Number = num
+	return attribute
 }
